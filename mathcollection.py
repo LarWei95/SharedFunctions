@@ -4243,6 +4243,30 @@ class Polynomial ():
             x = x ** self.__exponents
             y = np.sum(self._coefficients * x, axis=1)
             return y
+        
+        def inverse (self, y):
+            if self._degree == 2:
+                return (self._coefficients[1] - y) / self._coefficients[0]
+            elif self._degree == 3:
+                a = self._coefficients[0]
+                b = self._coefficients[1]
+                c = self._coefficients[2] - y
+                
+                p1 = -b
+                p2 = np.sqrt(b**2 - 4*a*c)
+                p3 = 2*a
+                
+                results1 = (p1 + p2) / p3
+                results2 = (p1 - p2) / p3
+                
+                if isinstance(y, np.ndarray):
+                    return np.stack([results1, results2], axis=1)
+                else:
+                    return np.array([results1, results2])
+                
+                
+            
+            
             
     @classmethod
     def create (cls, x, y):
