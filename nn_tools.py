@@ -12,10 +12,11 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import Callback
 
 class WeightLoggerCallback(Callback):
-    def __init__ (self, model, logname):
+    def __init__ (self, model, logname, logstep=1):
         self.__model = model
         self.__logname = logname
         self.__fp = open(self.__logname, "w")
+        self.__logstep = logstep
         
         
         
@@ -29,14 +30,15 @@ class WeightLoggerCallback(Callback):
         pass
 
     def on_epoch_end(self, epoch, logs=None):
-        weights = self.__model.get_weights()
-        
-        d = [
-            weight_layer.tolist()
-            for weight_layer in weights
-        ]
-        d = json.dumps(d)+"\n"
-        self.__fp.write(d)
+        if epoch % self.__logstep == 0:
+            weights = self.__model.get_weights()
+            
+            d = [
+                weight_layer.tolist()
+                for weight_layer in weights
+            ]
+            d = json.dumps(d)+"\n"
+            self.__fp.write(d)
             
     def __del__ (self):
         self.__fp.close()

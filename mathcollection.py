@@ -841,12 +841,6 @@ class LinearAlgebra2D():
         fitted_vectors = cls.resize_polygon_vectors(vectors, order, size_change)
         new_points = cls._create_new_linegroup_for_resize(fitted_vectors)
         
-        new_vectors = cls.get_normal_vector_line_family(
-                cls.get_vectors_from_linepoints(new_points)
-            )
-        
-        # TODO Fuer Testzwecke
-        # new_polys = cls._create_new_resized_polygons_v2(vectors, new_vectors, new_points, size_change)
         new_polys = [new_points]
         return new_polys
         
@@ -1280,11 +1274,11 @@ class LinearAlgebra2D():
         
         polygon_indices = np.arange(len(polygons))
         
-        for i, p1 in enumerate(polygons):
+        for i in range(len(polygons)):
             p1_mean = polygon_means[i]
             p1_vecfams = polygon_vecfams[i]
             
-            for j, p2 in enumerate(polygons):
+            for j in range(len(polygons)):
                 if i < j:
                     p2_mean = polygon_means[j]
                     p2_vecfams = polygon_vecfams[j]
@@ -1740,7 +1734,7 @@ class LinearEquationSystems ():
     
     @classmethod
     def gaussian_elimination (cls, xs, ys):
-        perm, reperm = cls.get_coef_sorting_permutation(xs)
+        perm, _ = cls.get_coef_sorting_permutation(xs)
         # NOT READY
         permxs = xs[perm]
         permys = ys[perm]
@@ -1927,6 +1921,14 @@ class GraphTheory ():
                 distdict[(k1, k2)] = dist
                 
         return distdict
+        
+    @classmethod
+    def flip_edges (cls, edges):
+        new_edges = [
+                (edges[i][1], edges[i][0])
+                for i in range(len(edges)-1, -1, -1)
+            ]
+        return new_edges
         
     @classmethod
     def edges_to_singular_linegroups (cls, points, edges):
@@ -2264,7 +2266,6 @@ class GraphTheory ():
                 cls.edges_to_adjacency_list(point_count, bfs, symmetric=True),
                 cls.edges_to_adjacency_list(point_count, edges, symmetric=True)
             )
-        edges_adjlist = cls.edges_to_adjacency_list(point_count, edges, symmetric=False)
         desym_bfs_xor = cls.desymmetrize_adjacency_list(bfs_xor)
         
         inverted_bfs = np.array([
@@ -2494,16 +2495,6 @@ class GraphTheory ():
             
         return cycles
         
-    @classmethod
-    def fundamental_cycles_v3 (cls, point_count, edges):
-        adjlist = cls.edges_to_adjacency_list(point_count, edges, symmetric=True)
-        
-        bfs = cls.bfs(point_count, edges)
-        bfs_xor = cls.adjacency_lists_xor(
-                cls.edges_to_adjacency_list(point_count, bfs, symmetric=True),
-                cls.edges_to_adjacency_list(point_count, edges, symmetric=True)
-            )
-        
         
     @classmethod
     def _concatenate_cycle (cls, hit, first_index, second_index, node_list):
@@ -2599,13 +2590,13 @@ class GraphTheory ():
     def remove_filaments_from_adjacency_list (cls, adjlist):
         degrees = cls.get_vertex_degrees(adjlist)
         adjlist = deepcopy(adjlist)
-        cls._remove_simple_filaments(adjlist, degrees)
-        cls._remove_complex_filaments(adjlist, degrees)
+        cls.remove_simple_filaments(adjlist, degrees)
+        cls.remove_complex_filaments(adjlist, degrees)
         
         return adjlist
         
     @classmethod
-    def _remove_simple_filaments (cls, adjlist, degrees):
+    def remove_simple_filaments (cls, adjlist, degrees):
         verts_with_one = [
                 k 
                 for k in degrees
@@ -2631,14 +2622,23 @@ class GraphTheory ():
                     break
             
     @classmethod
-    def _remove_complex_filaments (cls, adjlist, degrees):
-        branch_verts = [
+    def remove_complex_filaments (cls, adjlist, degrees, keep_verts=None):
+        branch_verts = set([
                 k
                 for k in degrees
                 if degrees[k] > 2
-            ]
+            ])
+        
+        if keep_verts is not None:
+            branch_verts.update(set(keep_verts))
         
         filament_list = cls._create_filament_candidate_list(branch_verts, adjlist)
+        
+        '''
+        path_sub_dict: {(Start vertex, end vertex) : [(Start vertex, Next vertex),
+                    ..., (Vertex before final vertex, end vertex)]
+        '''
+        simplified_paths = {}
         
         for filament in filament_list:
             filament_length = len(filament)
@@ -2665,7 +2665,11 @@ class GraphTheory ():
                         if v1 in adjlist[v2]:
                             adjlist[v2].remove(v1)
                             degrees[v2] -= 1
-            
+                            
+                    simplified_paths[(start_vertex, end_vertex)] = filament
+                    simplified_paths[(end_vertex, start_vertex)] = cls.flip_edges(filament)
+                    
+        return simplified_paths
             
     @classmethod
     def _create_filament_candidate_list (cls, branch_verts, adjlist):
@@ -2744,12 +2748,83 @@ class GraphTheory ():
             c_indices = new_c_indices
                     
         return False
+    
+    @classmethod
+    def update_weights_list_for_path_sub (cls, weights_list, path_sub_dict):
+        '''
+        Updates the weights list additionally with a path substitution dict, e.g.
+        received from 'remove_complex_filaments'.
+        
+        weights_list: {(Vertex 1, Vertex 2) : weight, ...}
+        path_sub_dict: {(Start vertex, end vertex) : [(Start vertex, Next vertex),
+                    ..., (Vertex before final vertex, end vertex)]
+        '''
+        
+        for substitution_tuple in path_sub_dict:
+            substituted_edges = path_sub_dict[substitution_tuple]
+            
+            sub_weight = np.sum([
+                    weights_list[substituted_edge]
+                    for substituted_edge in substituted_edges
+                ])
+            
+            for substituted_edge in substituted_edges:
+                del weights_list[substituted_edge]
                 
+            weights_list[substitution_tuple] = sub_weight
+            
+    
+    @classmethod
+    def remap_points_by_dict (cls, points, remap_dict):
+        if isinstance(points, dict):
+            points = {
+                    remap_dict[k] : points[k]
+                    for k in points
+                }
+        else:
+            points = [
+                    remap_dict[k]
+                    for k in points
+                ]
+            
+        return points
+    
+    @classmethod
+    def remap_adjacency_list_by_dict (cls, adjlist, remap_dict):
+        new_adjlist = defaultdict(set)
+        
+        for node1 in adjlist:
+            node1remap = remap_dict[node1]
+            adjs = adjlist[node1]
+            
+            for node2 in adjs:
+                node2remap = remap_dict[node2]
+                new_adjlist[node1remap].add(node2remap)
+        
+        return new_adjlist
+        
+    @classmethod
+    def remap_indices_by_dict (cls, points, adjlist):
+        remap_dict = {}
+        backmap_dict = {}
+        
+        counter = 0
+        
+        for p in points:
+            remap_dict[p] = counter
+            backmap_dict[counter] = p
+            counter += 1
+            
+        new_points = cls.remap_points_by_dict(points, remap_dict)
+        new_adjlist = cls.remap_adjacency_list_by_dict(adjlist, remap_dict)
+        return new_points, new_adjlist, remap_dict, backmap_dict
+    
     @classmethod
     def _remap_indices_by_adjacency_list_degrees (cls, adjlist):
         '''
         ADJLIST MUST BE SYMMETRIC!
         '''
+        
         
         remap = {}
         index_counter = 0
@@ -2772,7 +2847,7 @@ class GraphTheory ():
                 for adj in adjs:
                     new_adj = remap[adj]
                     new_adjlist[new_k].add(new_adj)
-                    
+        
         return remap, new_adjlist
                 
     @classmethod
@@ -2790,6 +2865,23 @@ class GraphTheory ():
             yminind = np.argmin(cor_points[xminindices, 1])
             minind = xminindices[yminind]
         
+    
+            
+        
+        
+    @classmethod
+    def remap_indices (cls, points, adjlist):
+        remap = {}
+        backmap = {}
+        
+        counter = 0
+        
+        for point_id in points:
+            remap[point_id] = counter
+            backmap[counter] = point_id
+            counter += 1
+        
+        pass
                 
     @classmethod
     def cycle_basis (cls, linegroups):
@@ -2823,7 +2915,7 @@ class GraphTheory ():
         '''
                 
     @classmethod
-    def _find_filaments (cls, adjlist):
+    def _find_filaments (cls, adjlist, keep_verts=None):
         filament_indices = set()
         
         for i in adjlist:
@@ -2832,6 +2924,8 @@ class GraphTheory ():
             if count == 2:
                 filament_indices.add(i)
             
+        if keep_verts is not None:
+            filament_indices = filament_indices - set(keep_verts)
         
         return filament_indices
                 
@@ -2874,9 +2968,9 @@ class GraphTheory ():
             
                 
     @classmethod
-    def substitution_dict_for_adjacency_list (cls, adjlist):
+    def substitution_dict_for_adjacency_list (cls, adjlist, keep_verts=None):
         # Sub-Tuble -> List of edges
-        filament_indices = cls._find_filaments(adjlist)
+        filament_indices = cls._find_filaments(adjlist, keep_verts=keep_verts)
         
         filaments = cls._connect_filaments(adjlist, filament_indices)
         update_dict = {}
