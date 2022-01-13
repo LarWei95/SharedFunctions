@@ -48,7 +48,7 @@ class Screencapper(object):
                 
             return screencap, t
         except:
-            print("Fuck")
+            print("Error")
             return None, None
         
     def start_recording (self):

@@ -1803,6 +1803,38 @@ class LinearEquationSystems ():
         y = np.sum(y, axis=1)
         return y
 
+class Graph ():
+        def __init__ (self, vertices, adjlist, weights_adjlist):
+            self.vertices = vertices
+            self.adjlist = adjlist
+            self.weights_adjlist = weights_adjlist
+            
+        def remap_vertex_indices (self):
+            verts, adjlist, rmap_dict, bmap_dict = GraphTheory.remap_indices_by_dict(self.vertices, self.adjlist)
+            weights_adjlist = {
+                    (rmap_dict[tup[0]], rmap_dict[tup[1]]) : self.weights_adjlist[tup]
+                    for tup in self.weights_adjlist
+                }
+            return RemappedGraph(verts, adjlist, weights_adjlist,
+                                 rmap_dict, bmap_dict)
+            
+class RemappedGraph (Graph):
+    def __init__ (self, vertices, adjlist, weights_adjlist, remap_dict, backmap_dict):
+        super().__init__(vertices, adjlist, weights_adjlist)
+        # Remap dict used for the given vertices, adjlist and weights_adjlist
+        self.remap_dict = remap_dict
+        # Backmap dict to use for regaining the original
+        self.backmap_dict = backmap_dict
+        
+    def backmap_vertex_indices (self):
+        points = cls.remap_points_by_dict(self.vertices, self.backmap_dict)
+        adjlist = cls.remap_adjacency_list_by_dict(self.adjlist, self.backmap_dict)
+        weights_adjlist = {
+                    (self.backmap_dict[tup[0]], self.backmap_dict[tup[1]]) : self.weights_adjlist[tup]
+                    for tup in self.weights_adjlist
+                }
+        return Graph(points, adjlist, weights_adjlist)
+
 class GraphTheory ():
     @classmethod
     def order_cycle_edges (cls, edges):

@@ -11,6 +11,160 @@ import json
 from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import Callback
 
+class DataBalancer ():
+    
+    @classmethod
+    def _create_bins (cls, y, bintype, bincount):
+        minval = np.min(y)
+        maxval = np.max(y)
+        
+        if bintype == "linear":
+            bins = np.linspace(minval, maxval, bincount+1)
+        else:
+            minval = np.log(minval) / np.log(10)
+            maxval = np.log(maxval) / np.log(10)
+            
+            bins = np.logspace(minval, maxval, bincount+1)
+            
+        return bins
+    
+    @classmethod
+    def _associate_bins (cls, y, bins):
+        associations = np.empty(len(y), dtype=np.int)
+        counts = np.empty(len(bins) - 1, dtype=np.int)
+        
+        maxi = len(bins) - 1
+        
+        for i in range(maxi):
+            start = bins[i]
+            end = bins[i+1]
+            
+            if i == 0:
+                mask = y < end
+            elif i == maxi - 1:
+                mask = y >= start
+            else:
+                mask = (y >= start) & (y < end)
+               
+            associations[mask] = i
+            counts[i] = np.sum(mask)
+        
+        return associations, counts
+            
+    @classmethod
+    def _find_optimal_bins (cls, y, bintype, bincount_start):
+        bincount = bincount_start
+        
+        bins = cls._create_bins(y, bintype, bincount)
+        associations, counts = cls._associate_bins(y, bins)
+        
+        while True:
+            if np.min(counts) > 0:
+                print("Best bin count: "+str(bincount))
+                return associations
+            else:
+                bincount -= 1
+                bins = cls._create_bins(y, bintype, bincount)
+                associations, counts = cls._associate_bins(y, bins)
+    
+    @classmethod
+    def _simple_balance (cls, x, y, uniques, counts, indices):
+        maxcount = np.max(counts)
+        diffs = maxcount - counts
+        
+        x_concat = [x]
+        y_concat = [y]
+        
+        for unique_index in range(len(uniques)):
+            missing_count = diffs[unique_index]
+            mask = indices == unique_index
+            x_repeatables = x[mask]
+            y_repeatables = y[mask]
+            count = len(x_repeatables)
+            
+            float_repeats = (missing_count / count)
+            direct_repeats = np.floor(float_repeats).astype(int)
+            partial_repeats = np.round((float_repeats - direct_repeats) * count).astype(int)
+                       
+            if float_repeats > 0:
+                x_direct_repeats = np.repeat(x_repeatables, direct_repeats, axis=0)
+                y_direct_repeats = np.repeat(y_repeatables, direct_repeats, axis=0)
+                
+                x_partial_repeats = x_repeatables[:partial_repeats]
+                y_partial_repeats = y_repeatables[:partial_repeats]
+                
+                x_concat.append(x_direct_repeats)
+                y_concat.append(y_direct_repeats)
+                
+                x_concat.append(x_partial_repeats)
+                y_concat.append(y_partial_repeats)
+            
+        x_concat = np.concatenate(x_concat, axis=0)
+        y_concat = np.concatenate(y_concat, axis=0)
+        
+        return x_concat, y_concat
+    
+    @classmethod
+    def _get_subindices (cls, y, bincount_start, bintype):
+        all_subindices = []
+        
+        for i in range(y.shape[1]):
+            suby = y[:,i]
+            
+            associations = cls._find_optimal_bins(suby, bintype, bincount_start)
+            
+            all_subindices.append(associations)
+            
+        stacked_subindices = np.stack(all_subindices, axis=1)
+        
+        return stacked_subindices
+    
+    @classmethod
+    def oversample_regression (cls, x, y, bincount_start, bintype="linear",
+                            advanced_balance=False):
+        subindices = cls._get_subindices(y, bincount_start, bintype)
+        uniques, indices, counts = np.unique(subindices, 
+                                             return_inverse=True, 
+                                             return_counts=True,
+                                             axis=0)        
+        
+        x, y = cls._simple_balance(x, y, uniques, counts, indices)
+        
+        return x, y
+    
+    @classmethod
+    def _simple_sample_weights (cls, y, uniques, counts, indices):
+        maxcount = np.max(counts)
+        
+        bin_weights = counts / maxcount
+        bin_weights = 1 / bin_weights
+        
+        sample_weights = np.empty(len(y), dtype=np.float)
+        
+        for unique_index in range(len(bin_weights)):
+            weight = bin_weights[unique_index]
+            
+            mask = indices == unique_index
+            sample_weights[mask] = weight
+            
+        sample_weights = sample_weights / np.sum(sample_weights) * len(sample_weights)
+            
+        print(np.sum(sample_weights), len(sample_weights))
+            
+        return sample_weights
+            
+        
+    
+    @classmethod
+    def sample_weight_regression (cls, y, bincount_start, bintype="linear",
+                                  advanced_balance=False):
+        subindices = cls._get_subindices(y, bincount_start, bintype)
+        uniques, indices, counts = np.unique(subindices, 
+                                             return_inverse=True, 
+                                             return_counts=True,
+                                             axis=0)   
+        return cls._simple_sample_weights(y, uniques, counts, indices)
+
 class WeightLoggerCallback(Callback):
     def __init__ (self, model, logname, logstep=1):
         self.__model = model
@@ -220,6 +374,7 @@ class KerasManager ():
         
     def train (self, epoch, model, input_data, output_data, **kwargs):
         if output_data is not None:
+            print(input_data.shape, output_data.shape)
             history = model.fit(input_data, output_data, initial_epoch=epoch, **kwargs)
         else:
             history = model.fit_generator(input_data, initial_epoch=epoch, **kwargs)
