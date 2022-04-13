@@ -66,20 +66,3 @@ class MySQLWrapper():
             
         self._con.close()
         self._lock.release()
-        
-        
-        
-        
-        
-        
-        
-if __name__ == "__main__":
-    wrapper = MySQLWrapper(host="localhost", user="root", password="p0k3m0nBlttgrn", database="idealo_data")
-    
-    query = "SELECT * FROM category;"
-    
-    with wrapper(commit=False) as cur:
-        cur.execute(query)
-        rows = cur.fetchall()
-        
-    print(rows)
