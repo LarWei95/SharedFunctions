@@ -4398,3 +4398,27 @@ class Polynomial ():
     def create (cls, x, y):
         coefs = LinearEquationSystems.create_polynomial_function(x, y)
         return cls.PolynomialFunction(coefs)
+
+class Bins ():
+    @classmethod
+    def create_bins (cls, values, bin_limits, scale="linear"):
+        if isinstance(bin_limits, int):
+            minval = np.min(values) * 0.9
+            maxval = np.max(values) * 1.1
+            
+            
+            if scale == "linear":
+                bin_limits = np.linspace(minval, maxval, bin_limits+1)
+            else:
+                bin_limits = np.logspace(np.log10(minval), np.log10(maxval), bin_limits+1)
+        
+            bin_starts = bin_limits[:-1]
+            bin_ends = bin_limits[1:]
+            
+            bin_limits = np.stack([bin_starts, bin_ends], axis=1)
+            
+        bin_counts = np.array([
+                np.sum((values >= limits[0]) & (values < limits[1]))
+                for limits in bin_limits
+            ])
+        return bin_limits, bin_counts
